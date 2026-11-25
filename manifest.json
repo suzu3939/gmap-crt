@@ -1,0 +1,9 @@
+{
+  "name": "GMAP-CRT 毎日1問",
+  "short_name": "GMAP-CRT",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1f4e8c",
+  "theme_color": "#1f4e8c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

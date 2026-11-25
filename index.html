@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f4e8c">
+<title>GMAP-CRT 毎日1問</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--text:#1d2733;--sub:#667085;--line:#d9e0ea;--accent:#1f4e8c;--ok:#1a7f4b;--okbg:#e4f5ec;--ng:#c0392b;--ngbg:#fbe9e7}
+@media (prefers-color-scheme:dark){:root{--bg:#10151c;--card:#1a212b;--text:#e8edf3;--sub:#9aa7b8;--line:#2d3745;--accent:#6aa5ee;--ok:#5fd394;--okbg:#17352a;--ng:#ff8a7a;--ngbg:#3a1f1c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+header{background:var(--accent);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:2}
+header h1{font-size:16px;margin:0}
+header button{background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:8px;padding:6px 12px;font-size:14px}
+main{max-width:640px;margin:0 auto;padding:16px}
+.meta{display:flex;gap:8px;align-items:center;color:var(--sub);font-size:14px;margin-bottom:8px;flex-wrap:wrap}
+.tag{background:var(--accent);color:#fff;border-radius:999px;padding:1px 10px;font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.q{white-space:pre-wrap;margin:0 0 12px}
+.choice{display:block;width:100%;text-align:left;background:var(--card);color:var(--text);border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0;font:inherit;min-height:48px}
+.choice:active{background:var(--bg)}
+.choice.ok{border-color:var(--ok);background:var(--okbg)}
+.choice.ng{border-color:var(--ng);background:var(--ngbg)}
+.exp{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--bg);border-left:4px solid var(--accent);white-space:pre-wrap}
+.res{font-weight:700;margin-top:12px}.res.ok{color:var(--ok)}.res.ng{color:var(--ng)}
+.nav{display:flex;gap:8px;margin-top:14px}
+.nav button{flex:1;padding:12px;border-radius:10px;border:1.5px solid var(--accent);background:var(--card);color:var(--accent);font:inherit;font-weight:600}
+.nav button.primary{background:var(--accent);color:#fff}
+.nav button:disabled{opacity:.35}
+.stats{display:flex;gap:8px;margin-bottom:12px}
+.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;font-size:12px;color:var(--sub)}
+.stat b{display:block;font-size:20px;color:var(--text)}
+.list .row{display:flex;gap:10px;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line)}
+.list .row:last-child{border:0}
+.row .d{width:64px;color:var(--sub);font-size:13px}
+.row .t{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:14px}
+.row .s{width:24px;text-align:center}
+.row.future{opacity:.5}
+.filter{display:flex;gap:8px;margin-bottom:12px}
+.filter button{flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;font-size:14px}
+.filter button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.note{color:var(--sub);font-size:13px;margin-top:16px;text-align:center}
+</style>
+</head>
+<body>
+<header><h1>GMAP-CRT 毎日1問</h1><button id="toggle">問題一覧</button></header>
+<main id="app"></main>
+<script src="questions.js"></script>
+<script>
+const KEY = "gmapcrt.v1";
+let store = {};
+try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} };
+
+const pad = n => String(n).padStart(2, "0");
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const base = new Date(START_DATE + "T00:00:00");
+const dateOf = i => { const d = new Date(base); d.setDate(d.getDate() + i); return d; };
+const label = i => { const d = dateOf(i); return `${d.getMonth() + 1}/${d.getDate()}`; };
+const todayIdx = () => {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((t - base) / 86400000);
+};
+const clamp = i => Math.max(0, Math.min(QUESTIONS.length - 1, i));
+const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+let view = "q", cur = clamp(todayIdx()), filter = "all";
+const app = document.getElementById("app");
+const toggle = document.getElementById("toggle");
+
+function stats() {
+  let done = 0, ok = 0;
+  QUESTIONS.forEach((_, i) => { const r = store[i]; if (r) { done++; if (r.ok) ok++; } });
+  return { done, ok, ng: done - ok };
+}
+
+function renderQ() {
+  const q = QUESTIONS[cur], rec = store[cur], s = stats();
+  const t = todayIdx();
+  const tn = t < 0 ? `開始まであと${-t}日` : t >= QUESTIONS.length ? "全日程終了(復習モード)" : (cur === t ? "今日の問題" : "");
+  let h = `<div class="stats">
+    <div class="stat"><b>${s.done}/${QUESTIONS.length}</b>回答済み</div>
+    <div class="stat"><b>${s.done ? Math.round(s.ok / s.done * 100) : 0}%</b>正答率</div>
+    <div class="stat"><b>${s.ng}</b>間違い</div></div>
+    <div class="meta"><span class="tag">${q.cat}</span><span>第${cur + 1}問 ・ ${label(cur)}</span><span>${tn}</span></div>
+    <div class="card"><p class="q">${esc(q.q)}</p>`;
+  q.c.forEach((c, i) => {
+    let cls = "";
+    if (rec) { if (i === q.a) cls = "ok"; else if (i === rec.pick) cls = "ng"; }
+    h += `<button class="choice ${cls}" data-i="${i}" ${rec ? "disabled" : ""}>${"ABCDE"[i]}. ${esc(c)}</button>`;
+  });
+  if (rec) {
+    h += `<div class="res ${rec.ok ? "ok" : "ng"}">${rec.ok ? "⭕ 正解!" : "❌ 不正解(正解は " + "ABCDE"[q.a] + ")"}</div>
+          <div class="exp">${esc(q.e)}</div>
+          <div class="nav"><button id="retry">もう一度解く</button></div>`;
+  }
+  h += `</div><div class="nav">
+    <button id="prev" ${cur === 0 ? "disabled" : ""}>← 前へ</button>
+    <button id="next" class="primary" ${cur === QUESTIONS.length - 1 ? "disabled" : ""}>次へ →</button></div>`;
+  app.innerHTML = h;
+  app.querySelectorAll(".choice").forEach(b => b.onclick = () => {
+    const pick = +b.dataset.i;
+    store[cur] = { pick, ok: pick === q.a, at: ymd(new Date()) };
+    save(); renderQ(); window.scrollTo({ top: 0 });
+  });
+  const r = document.getElementById("retry");
+  if (r) r.onclick = () => { delete store[cur]; save(); renderQ(); };
+  document.getElementById("prev").onclick = () => { cur = clamp(cur - 1); renderQ(); window.scrollTo(0, 0); };
+  document.getElementById("next").onclick = () => { cur = clamp(cur + 1); renderQ(); window.scrollTo(0, 0); };
+}
+
+function renderList() {
+  const t = todayIdx();
+  let h = `<div class="filter">${[["all", "すべて"], ["ng", "間違い"], ["todo", "未回答"]].map(([k, n]) =>
+    `<button data-f="${k}" class="${filter === k ? "on" : ""}">${n}</button>`).join("")}</div><div class="card list">`;
+  QUESTIONS.forEach((q, i) => {
+    const r = store[i];
+    if (filter === "ng" && !(r && !r.ok)) return;
+    if (filter === "todo" && r) return;
+    h += `<div class="row ${i > t ? "future" : ""}" data-i="${i}">
+      <span class="d">${label(i)}${i === t ? " ★" : ""}</span>
+      <span class="t">[${q.cat}] ${esc(q.q.split("\n")[0])}</span>
+      <span class="s">${r ? (r.ok ? "⭕" : "❌") : "・"}</span></div>`;
+  });
+  h += `</div><p class="note"><a href="#" id="reset" style="color:var(--sub)">記録をリセット</a></p>`;
+  app.innerHTML = h;
+  app.querySelectorAll(".filter button").forEach(b => b.onclick = () => { filter = b.dataset.f; renderList(); });
+  app.querySelectorAll(".row").forEach(r => r.onclick = () => { cur = +r.dataset.i; setView("q"); });
+  document.getElementById("reset").onclick = e => {
+    e.preventDefault();
+    if (confirm("回答の記録をすべて消します。よろしいですか?")) { store = {}; save(); renderList(); }
+  };
+}
+
+function setView(v) {
+  view = v;
+  toggle.textContent = v === "q" ? "問題一覧" : "問題に戻る";
+  v === "q" ? renderQ() : renderList();
+  window.scrollTo(0, 0);
+}
+toggle.onclick = () => setView(view === "q" ? "list" : "q");
+setView("q");
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
